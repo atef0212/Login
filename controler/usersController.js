@@ -1,5 +1,7 @@
 import collection from "../modals/usersSchema.js";
 import bcrypt from "bcrypt"
+import jwt from 'jsonwebtoken';
+
 
 
 const logIn= async(req, res)=>{
@@ -10,41 +12,63 @@ const signUp= async (req, res)=>{
     res.render("signup.ejs")
 }
 
-const addUsers= async (req, res)=>{
-    const data={
-        name:req.body.username,
-        password:req.body.password
-    }
-    const existingUser =await collection.findOne({name:data.name})
-    if(existingUser){
-        res.send("user already exist. Please chosse a different username")
-    }else{
-        //hash password
-        const saltRounds=10 //num of salt round for bcrypt
-        const hashPassword= await bcrypt.hash(data.password, saltRounds )
+const addUsers = async (req, res) => {
+    const data = {
+        name: req.body.username,
+        password: req.body.password
+    };
+    try {
+        const existingUser = await collection.findOne({ name: data.name });
+        if (existingUser) {
+            return res.send("User already exists. Please choose a different username.");
+        } else {
+            const saltRounds = 10;
+            const hashPassword = await bcrypt.hash(data.password, saltRounds);
+            data.password = hashPassword;
 
-        data.password=hashPassword //to replace the hash password with orignal password     
-        const userdata= await collection.insertMany(data)
-    console.log(userdata)
-    }
-    
-}
+            const newUser = await collection.create(data);
 
-const loginUser= async (req, res)=>{
-    try{
-        const check= await collection.findOne({name:req.body.username})
-        if(!check){
-            res.send("user name cannot found")
+            const payload = {
+                userId: newUser._id,
+                username: newUser.name
+            };
+            const secretKey = 'your-secret-key';
+            const token = jwt.sign(payload, secretKey, { expiresIn: "1h" });
+            res.json({ token });
         }
-        //compare the hash password from the database with the plain text
-        const isPasswordMatch= await bcrypt.compare(req.body.password, check.password)
-        if(isPasswordMatch){
-            res.render("home")
-        }else{
-            res.send("wrong password or Email")
-        }
-    }catch{
-        res.send("wrong details")
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("Internal Server Error");
     }
-}
+};
+
+
+
+const loginUser = async (req, res) => {
+    try {
+        const user = await collection.findOne({ name: req.body.username });
+        if (!user) {
+            return res.send("Username not found");
+        }
+
+        const isPasswordMatch = await bcrypt.compare(req.body.password, user.password);
+        if (!isPasswordMatch) {
+            return res.send("Incorrect password");
+        }
+
+        // User authenticated, generate JWT token
+        const payload = {
+            userId: user._id,
+            username: user.name
+        };
+        const secretKey = 'your-secret-key'; // Replace with your actual secret key
+        const token = jwt.sign(payload, secretKey, { expiresIn: "1h" });
+
+        // Send the token as a response
+        res.json({ token, username: user.name });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("Internal Server Error");
+    }
+};
 export {loginUser, addUsers, signUp, logIn}
